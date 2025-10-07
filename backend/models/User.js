@@ -1,0 +1,51 @@
+const mongoose = require('mongoose');
+
+const UserSchema = new mongoose.Schema({
+    name: {
+        type: String,
+        required: true
+    },
+    email: {
+        type: String,
+        required: true,
+        unique: true
+    },
+    password: {
+        type: String,
+        required: true
+    },
+    role: {
+        type: String,
+        enum: ['student', 'admin'],
+        required: true
+    },
+    borrowed: [
+        {
+            bookId: {
+                type: mongoose.Schema.Types.ObjectId,
+                ref: 'Book'
+            },
+            borrowedDate: {
+                type: Date,
+                default: Date.now
+            },
+            dueDate: {
+                type: Date
+            }
+        }
+    ],
+    history: [
+        {
+            bookId: {
+                type: mongoose.Schema.Types.ObjectId,
+                ref: 'Book'
+            },
+            returnedDate: {
+                type: Date,
+                default: Date.now
+            }
+        }
+    ]
+});
+
+module.exports = mongoose.model('User', UserSchema);
