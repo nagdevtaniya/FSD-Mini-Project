@@ -37,8 +37,8 @@ const UserSchema = new mongoose.Schema({
     history: [
         {
             bookId: {
-                type: mongoose.Schema.Types.ObjectId,
-                ref: 'Book'
+                type: String,
+                required: true
             },
             returnedDate: {
                 type: Date,

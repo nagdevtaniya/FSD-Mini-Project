@@ -5,7 +5,7 @@ import { useLibrary } from '../../contexts/LibraryContext';
 const AdminDashboard = () => {
   const { books, users, requests, setCurrentPage } = useLibrary();
 
-  const totalBooks = books.reduce((sum, book) => sum + book.totalCopies, 0);
+  const totalBooks = books.reduce((sum, book) => sum + (book.totalCopies || 0), 0);
   const totalStudents = users.filter(u => u.role === 'student').length;
   const pendingRequests = requests.filter(r => r.status === 'pending').length;
 

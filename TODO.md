@@ -1,7 +1,5 @@
-- [x] Update backend/routes/requests.js to emit 'newRequest' to 'admins' room
-- [x] Update backend/routes/requests.js to emit 'requestUpdated' to 'admins' room
-- [x] Update backend/server.js to emit 'bookReturnedAdmin' to 'admins' room
-- [x] Remove unused socket.on('newRequest') in server.js
-- [x] Use .toObject() for request objects in emits
-- [x] Change emits to targeted rooms
-- [ ] Test the real-time functionality
+# Library System Fixes
+
+## Current Tasks
+- [x] Fix year validation error in AdminAddBook.jsx (parse year as integer in validation)
+- [x] Update book card image display in AdminBookList.jsx (change object-cover to object-contain to show full image)

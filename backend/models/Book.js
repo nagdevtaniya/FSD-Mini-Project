@@ -1,3 +1,4 @@
+// models/Book.js
 const mongoose = require('mongoose');
 
 const BookSchema = new mongoose.Schema({
@@ -25,7 +26,22 @@ const BookSchema = new mongoose.Schema({
         required: true,
         default: 1
     },
+    totalCopies: {
+        type: Number,
+        required: false,
+        default: 1
+    },
     cover: {
+        type: String,
+        required: false,
+        trim: true
+    },
+    isbn: {
+        type: String,
+        required: false,
+        trim: true
+    },
+    description: {
         type: String,
         required: false,
         trim: true

@@ -1,3 +1,4 @@
+// server.js
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
@@ -6,30 +7,33 @@ const { Server } = require('socket.io');
 require('dotenv').config();
 
 const app = express();
-const PORT = 5000;
+
+// Use PORT env or default
+const PORT = process.env.PORT || 5000;
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/library-system';
+const CLIENT_ORIGINS = (process.env.CLIENT_ORIGINS || 'http://localhost:3000,http://localhost:3001').split(',');
 
 // Middleware
 app.use(express.json());
 app.use(cors());
 
 // Connect to MongoDB
-// NOTE: This is the exact connection string you will use for MongoDB Compass
-mongoose.connect('mongodb://localhost:27017/library-system')
-  .then(() => console.log('MongoDB connected'))
+mongoose.connect(MONGODB_URI)
+  .then(() => console.log('MongoDB connected:', MONGODB_URI.startsWith('mongodb://') ? 'local' : 'atlas/remote'))
   .catch(err => console.error('MongoDB connection error:', err));
 
 // Create HTTP server
 const server = http.createServer(app);
 
-// Initialize Socket.IO
+// Initialize Socket.IO with CORS origins from env
 const io = new Server(server, {
   cors: {
-    origin: ["http://localhost:3000", "http://localhost:3001"],
+    origin: CLIENT_ORIGINS,
     methods: ["GET", "POST"]
   }
 });
 
-// Make io accessible in routes via app
+// Make io accessible in app and routes
 app.set('io', io);
 
 // Socket.IO connection handling
@@ -37,12 +41,14 @@ io.on('connection', (socket) => {
   console.log('A user connected:', socket.id);
 
   socket.on('join', (data) => {
-    const { userId, role } = data;
-    socket.join(userId);
-    console.log(`User ${userId} joined room`);
+    const { userId, role } = data || {};
+    if (userId) {
+      socket.join(userId);
+      console.log(`User ${userId} joined room`);
+    }
     if (role === 'admin') {
       socket.join('admins');
-      console.log(`User ${userId} joined admins room`);
+      console.log(`User joined admins room`);
     }
   });
 
@@ -60,7 +66,11 @@ io.on('connection', (socket) => {
 
   socket.on('bookReturnedAdmin', (data) => {
     console.log('Received bookReturnedAdmin from client:', data);
-    io.emit('bookReturnedAdmin', data);
+    io.to('admins').emit('bookReturnedAdmin', data);
+  });
+
+  socket.on('bookRemoved', (data) => {
+    io.emit('bookRemoved', data);
   });
 
   socket.on('disconnect', () => {
@@ -72,13 +82,19 @@ io.on('connection', (socket) => {
 const { authenticateToken } = require('./middleware/auth');
 const authRoutes = require('./routes/auth');
 const bookRoutes = require('./routes/books');
-const requestRoutes = require('./routes/requests')(io);
+const requestRoutesFactory = require('./routes/requests');
 
+// Routes (no auth for register/login)
 app.use('/api/auth', authRoutes);
-app.use('/api/books', authenticateToken, bookRoutes);
-app.use('/api/requests', authenticateToken, requestRoutes);
+// Public routes
+app.use('/api/books', bookRoutes);
+// Protected routes
+app.use('/api/requests', authenticateToken, requestRoutesFactory(io));
+
+// Default health check
+app.get('/', (req, res) => res.send('Library backend is running'));
 
 // Start the server
 server.listen(PORT, () => {
-  console.log(`Server is running on http://localhost:${PORT}`);
+  console.log(`Server is running on http://localhost:${PORT} (PORT env: ${process.env.PORT || 'not set'})`);
 });

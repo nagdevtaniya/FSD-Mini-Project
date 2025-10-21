@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useLibrary } from '../../contexts/LibraryContext';
+import { Icons } from '../../utils/icons';
 import Navbar from '../common/Navbar';
 
 const StudentBorrowHistory = () => {
-  const { currentUser, books } = useLibrary();
+  const { currentUser, books, handleDeleteHistory } = useLibrary();
   const [history, setHistory] = useState([]);
 
   useEffect(() => {
@@ -41,12 +42,23 @@ const StudentBorrowHistory = () => {
                     <p className="text-sm text-gray-600 mb-3">by {item.author}</p>
                     <p className="text-sm text-gray-700"><strong>Returned:</strong> <span className="font-medium">{formatDate(item.returnedDate)}</span></p>
                   </div>
-                  <div className="mt-4 sm:mt-0 sm:ml-auto">
+                  <div className="mt-4 sm:mt-0 sm:ml-auto flex items-center space-x-2">
                     <span
                       className="inline-block px-4 py-2 rounded-full font-semibold text-sm bg-yellow-200 text-yellow-800"
                     >
                       Returned
                     </span>
+                    <button
+                      onClick={() => {
+                        if (window.confirm(`Are you sure you want to delete the history for "${item.title}"?`)) {
+                          handleDeleteHistory(item.bookId);
+                        }
+                      }}
+                      className="p-2 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-full transition-colors"
+                      title="Delete history"
+                    >
+                      <Icons.Trash />
+                    </button>
                   </div>
                 </div>
               ))}

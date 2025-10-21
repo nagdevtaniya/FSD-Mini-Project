@@ -1,3 +1,4 @@
+// src/contexts/LibraryContext.jsx
 import React, { createContext, useState, useEffect, useContext } from 'react';
 import { io } from 'socket.io-client';
 
@@ -19,7 +20,9 @@ export const LibraryProvider = ({ children }) => {
   const [requests, setRequests] = useState([]);
   const [notification, setNotification] = useState(null);
 
-  const API_URL = 'http://localhost:5000/api';
+  // Use REACT_APP_ env vars at build time or fallback to localhost
+  const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+  const SOCKET_URL = process.env.REACT_APP_SOCKET_URL || (process.env.REACT_APP_API_URL ? process.env.REACT_APP_API_URL.replace('/api','') : 'http://localhost:5000');
 
   // Socket.io client instance
   const [socket, setSocket] = useState(null);
@@ -44,28 +47,27 @@ export const LibraryProvider = ({ children }) => {
       return;
     }
 
-    const newSocket = io('http://localhost:5000');
+    // Create socket with server URL
+    const newSocket = io(SOCKET_URL, { transports: ['websocket', 'polling'] });
     setSocket(newSocket);
 
-    newSocket.emit('join', { userId: currentUser._id, role: currentUser.role });
-    console.log(`Socket connected and joined room: ${currentUser._id}, role: ${currentUser.role}`);
+    newSocket.emit('join', { userId: currentUser._id || currentUser.id, role: currentUser.role });
+    console.log(`Socket connected and joined room: ${currentUser._id || currentUser.id}, role: ${currentUser.role}`);
 
     newSocket.on('requestStatus', (data) => {
-      console.log('Current user id:', currentUser._id, 'data.studentId:', data.studentId);
-      if (data.studentId === currentUser._id) {
+      console.log('Current user id:', currentUser._id || currentUser.id, 'data.studentId:', data.studentId);
+      if (data.studentId === (currentUser._id || currentUser.id)) {
         console.log('Received requestStatus event:', data);
         showNotification(data.message, data.status === 'approved' ? 'success' : 'error');
         fetchInitialData();
       }
     });
 
-    // Listen for new book borrow requests (admin only)
     newSocket.on('newRequest', (data) => {
       console.log('Received newRequest event:', data);
       if (currentUser.role === 'admin') {
         showNotification(data.message);
         setRequests(prev => {
-          // Avoid duplicate requests
           const exists = prev.some(req => req._id === data.request._id);
           if (exists) return prev;
           return [...prev, data.request];
@@ -73,7 +75,6 @@ export const LibraryProvider = ({ children }) => {
       }
     });
 
-    // Listen for request updates (admin only)
     newSocket.on('requestUpdated', (data) => {
       if (currentUser.role === 'admin') {
         console.log('Received requestUpdated event:', data);
@@ -85,35 +86,30 @@ export const LibraryProvider = ({ children }) => {
       }
     });
 
-    // Listen for book checked out events
     newSocket.on('bookCheckedOut', (data) => {
       console.log('Received bookCheckedOut event:', data);
       showNotification(data.message);
       fetchInitialData();
     });
 
-    // Listen for new book added
     newSocket.on('newBook', (data) => {
       console.log('Received newBook event:', data);
       showNotification(data.message);
       fetchInitialData();
     });
 
-    // Listen for book updated
     newSocket.on('bookUpdated', (data) => {
       console.log('Received bookUpdated event:', data);
       showNotification(data.message);
       fetchInitialData();
     });
 
-    // Listen for book returned
     newSocket.on('bookReturned', (data) => {
       console.log('Received bookReturned event:', data);
       showNotification(data.message);
       fetchInitialData();
     });
 
-    // Listen for book returned notification for admin side
     newSocket.on('bookReturnedAdmin', (data) => {
       console.log('bookReturnedAdmin event received, role:', currentUser.role);
       if (currentUser.role === 'admin') {
@@ -140,7 +136,18 @@ export const LibraryProvider = ({ children }) => {
 
   const fetchInitialData = async () => {
     const token = localStorage.getItem('token');
-    if (!token) return;
+    if (!token) {
+      // Fetch books publicly if not logged in
+      try {
+        const booksRes = await fetch(`${API_URL}/books`);
+        const booksData = await booksRes.json();
+        setBooks(Array.isArray(booksData) ? booksData : []);
+      } catch (error) {
+        console.error('Failed to fetch books:', error);
+        showNotification('Failed to connect to the server.', 'error');
+      }
+      return;
+    }
 
     try {
       const booksRes = await fetch(`${API_URL}/books`, { headers: getHeaders() });
@@ -155,14 +162,14 @@ export const LibraryProvider = ({ children }) => {
       const usersData = await usersRes.json();
       setUsers(Array.isArray(usersData) ? usersData : []);
 
-      // Update currentUser if they are logged in and data has been refreshed
+      // Update currentUser if logged in and user data refreshed
       if (currentUser) {
-        const updatedUser = usersData.find(u => u._id === currentUser._id);
+        const updatedUser = usersData.find(u => u._id === (currentUser._id || currentUser.id));
         if (updatedUser) {
           setCurrentUser(updatedUser);
+          localStorage.setItem('user', JSON.stringify(updatedUser));
         }
       }
-
     } catch (error) {
       console.error('Failed to fetch initial data:', error);
       showNotification('Failed to connect to the server.', 'error');
@@ -202,7 +209,7 @@ export const LibraryProvider = ({ children }) => {
         await fetchInitialData();
         showNotification(data.message);
       } else {
-        showNotification(data.message, 'error');
+        showNotification(data.message || 'Login failed', 'error');
       }
     } catch (error) {
       showNotification('Login failed. Server error.', 'error');
@@ -219,7 +226,7 @@ export const LibraryProvider = ({ children }) => {
       const data = await response.json();
       if (response.ok) {
         showNotification(data.message);
-        await fetchInitialData(); // Add this to update the users list
+        await fetchInitialData();
         return true;
       } else {
         showNotification(data.message, 'error');
@@ -244,7 +251,7 @@ export const LibraryProvider = ({ children }) => {
       const response = await fetch(`${API_URL}/requests`, {
         method: 'POST',
         headers: getHeaders(),
-        body: JSON.stringify({ bookId, studentId: currentUser._id }),
+        body: JSON.stringify({ bookId, studentId: currentUser._id || currentUser.id }),
       });
       const data = await response.json();
       if (response.ok) {
@@ -311,7 +318,7 @@ export const LibraryProvider = ({ children }) => {
       });
 
       const book = books.find(b => b._id === bookId);
-      if (book.copies > 0) {
+      if (book && book.copies > 0) {
         await fetch(`${API_URL}/books/${bookId}`, {
           method: 'PUT',
           headers: getHeaders(),
@@ -323,7 +330,7 @@ export const LibraryProvider = ({ children }) => {
       const borrowedDate = new Date();
       const dueDate = new Date(borrowedDate);
       dueDate.setDate(borrowedDate.getDate() + 14);
-      const updatedBorrowed = [...student.borrowed, { bookId, borrowedDate, dueDate }];
+      const updatedBorrowed = [...(student.borrowed || []), { bookId, borrowedDate, dueDate }];
 
       await fetch(`${API_URL}/auth/${studentId}`, {
         method: 'PUT',
@@ -333,27 +340,27 @@ export const LibraryProvider = ({ children }) => {
 
       await fetchInitialData();
       showNotification('Book checked out successfully!');
-
     } catch (error) {
       showNotification('Failed to checkout book. Server error.', 'error');
     }
   };
 
-
   const handleReturnBook = async (bookId) => {
     try {
-      const studentId = currentUser._id;
+      const studentId = currentUser._id || currentUser.id;
       const bookToUpdate = books.find(b => b._id === bookId);
       const userToUpdate = users.find(u => u._id === studentId);
 
-      const updatedBorrowed = userToUpdate.borrowed.filter(borrowedBook => borrowedBook.bookId !== bookId);
-      const updatedHistory = [...userToUpdate.history, { bookId, returnedDate: new Date() }];
+      const updatedBorrowed = (userToUpdate.borrowed || []).filter(borrowedBook => borrowedBook.bookId !== bookId);
+      const updatedHistory = [...(userToUpdate.history || []), { bookId, returnedDate: new Date() }];
 
-      await fetch(`${API_URL}/books/${bookId}`, {
-        method: 'PUT',
-        headers: getHeaders(),
-        body: JSON.stringify({ copies: bookToUpdate.copies + 1 })
-      });
+      if (bookToUpdate) {
+        await fetch(`${API_URL}/books/${bookId}`, {
+          method: 'PUT',
+          headers: getHeaders(),
+          body: JSON.stringify({ copies: (bookToUpdate.copies || 0) + 1 })
+        });
+      }
 
       const userResponse = await fetch(`${API_URL}/auth/${studentId}`, {
         method: 'PUT',
@@ -365,13 +372,15 @@ export const LibraryProvider = ({ children }) => {
 
       if (userResponse.ok) {
         showNotification('Book returned successfully!');
-        console.log('Emitting bookReturnedAdmin:', socket ? 'socket exists' : 'no socket');
         if (socket) {
+          const returnedBook = books.find(b => b._id === bookId);
+          const bookTitle = returnedBook ? returnedBook.title : 'Unknown Book';
           socket.emit('bookReturnedAdmin', {
-            message: `Student ${currentUser.name} has returned "${bookToUpdate.title}".`,
-            studentId: currentUser._id,
+            message: `Student ${currentUser.name} has returned the book "${bookTitle}".`,
+            studentId: studentId,
           });
         }
+        await fetchInitialData();
       } else {
         showNotification(userData.message, 'error');
       }
@@ -382,6 +391,26 @@ export const LibraryProvider = ({ children }) => {
 
   const handleAddBook = async (bookData) => {
     try {
+      if (!bookData.cover && bookData.isbn) {
+        try {
+          const response = await fetch(`https://openlibrary.org/api/books?bibkeys=ISBN:${bookData.isbn}&format=json`);
+          const data = await response.json();
+          const key = `ISBN:${bookData.isbn}`;
+          if (data[key] && data[key].thumbnail_url) {
+            bookData.cover = data[key].thumbnail_url;
+          }
+        } catch (fetchError) {
+          console.warn('Failed to fetch book cover:', fetchError);
+        }
+      }
+
+      if (!bookData.cover) {
+        bookData.cover = 'https://via.placeholder.com/200x300?text=No+Cover';
+      }
+
+      // Ensure totalCopies exists
+      if (!bookData.totalCopies) bookData.totalCopies = bookData.copies || 1;
+
       const response = await fetch(`${API_URL}/books`, {
         method: 'POST',
         headers: getHeaders(),
@@ -390,6 +419,7 @@ export const LibraryProvider = ({ children }) => {
       const data = await response.json();
       if (response.ok) {
         showNotification('Book added successfully!');
+        await fetchInitialData();
         setCurrentPage('adminBookList');
       } else {
         showNotification(data.message, 'error');
@@ -424,6 +454,48 @@ export const LibraryProvider = ({ children }) => {
     }
   };
 
+  const handleRemoveBook = async (bookId) => {
+    try {
+      const response = await fetch(`${API_URL}/books/${bookId}`, {
+        method: 'DELETE',
+        headers: getHeaders(),
+      });
+      if (response.ok) {
+        await fetchInitialData();
+        showNotification('Book removed successfully!');
+        if (socket) {
+          socket.emit('bookRemoved', {
+            message: 'A book has been removed from the library.',
+          });
+        }
+      } else {
+        const data = await response.json();
+        showNotification(data.message, 'error');
+      }
+    } catch (error) {
+      showNotification('Failed to remove book. Server error.', 'error');
+    }
+  };
+
+  const handleDeleteHistory = async (bookId) => {
+    try {
+      const response = await fetch(`${API_URL}/auth/history/${bookId}`, {
+        method: 'DELETE',
+        headers: getHeaders(),
+      });
+      const data = await response.json();
+      if (response.ok) {
+        setCurrentUser(data.user);
+        localStorage.setItem('user', JSON.stringify(data.user));
+        showNotification('History item deleted successfully!');
+      } else {
+        showNotification(data.message, 'error');
+      }
+    } catch (error) {
+      showNotification('Failed to delete history item. Server error.', 'error');
+    }
+  };
+
   const getStudentHistory = () => {
     return currentUser ? currentUser.history : [];
   };
@@ -451,6 +523,8 @@ export const LibraryProvider = ({ children }) => {
     handleReturnBook,
     handleAddBook,
     handleUpdateBook,
+    handleRemoveBook,
+    handleDeleteHistory,
     getStudentHistory,
     getStudentBorrowed,
   };
@@ -461,3 +535,4 @@ export const LibraryProvider = ({ children }) => {
     </LibraryContext.Provider>
   );
 };
+
